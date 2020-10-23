@@ -1,0 +1,132 @@
+---
+title: "prac_ml"
+author: "rishabh"
+date: "24/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This is a the week 4 project for practical machine learning. Given below is the question and the codes for the solution of the same.
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. 
+We kindly thank them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+## Initializing Libraries
+randomforest,rpart,ggplot,caret,gbm,plymr are initialized in the beggining. The up side to this is easier readability. But it may not be the best practice for efficient code as it needs more cpu/gpu power in the beggining.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+    library(randomForest)
+    library(rpart)
+    library(ggplot2)
+    library(caret)
+    library(gbm)
+    library(plyr)
+    set.seed(17790869)
+```
+
+## Loading and Cleaning Data
+the data was downloaded from the source. the empty elements have been removed
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+    training <- read.csv("./pml-training.csv", na.strings=c("NA","#DIV/0!",""))
+    testing <- read.csv("./pml-testing.csv", na.strings=c("NA","#DIV/0!",""))
+```
+
+## Structuring the Dataset
+only a ltd set of info is needed
+isolate the data from source
+pick only the info that isactually needed
+filter out rest of the info
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+    features <- names(testing[,colSums(is.na(testing)) == 0])[8:59]
+    training <- training[,c(features,"classe")]
+    testing <- testing[,c(features,"problem_id")]
+```
+
+## Seperating the Dev and Train set out of training data
+we have to separate our training data into train-set and dev-set. As a rule of thumb I tested a 60:40 split, and 80:20 split. The 80:20 split performed marginally better and is thus the focus of this project report. A stratified split should always be preffered but it was beyond the scope of this project. A stratified split gives better representation of data in training, validation and test sets. It basically makes sure that mean of train,test,validation is same as mean of the whole dataset. This enables us to divide data in a much more organized manner.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+inTrain <- createDataPartition(training$classe, p=0.8, list=FALSE)
+trainSet <- training[inTrain,]
+devSet <- training[-inTrain,]
+```
+
+## Building the Decision Tree
+We build a Decision Tree Model on the base data set. There are various methods one can use like RCNN, Faster RCNN, YOLO. But i have chosen decision tree as it is a relatively easier method to implement with lesser chance of error. and works better with the time contraint i have.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+library(rattle)
+training_tree <- rpart(classe ~ ., data = trainSet, 
+                       method="class", 
+                       control = rpart.control(method = "cv", number = 10))
+fancyRpartPlot(training_tree)
+```
+
+## Predicting with the Decision Tree
+We predict the outputs using this Decision Tree Model, we don't expect a good accuracy with the model just yet cause of the out of bound error possibilities. These can be reduced by taking care of a few variables beforehand.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+prediction <- predict(training_tree, devSet, type = "class")
+classe <- as.factor(devSet$classe)
+confusionMatrix(prediction, classe)
+```
+
+From the above table we see that the accuracy of the Decision Tree is around 72.24%. This is a low accuracy, we now try to improve the accuracy by trying out a Random Forest Model. We expect a considerable increase in accuracy.
+
+## Building Random Forest Model
+Now, we build a random forest model
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+randomForestdata <- randomForest(as.factor(classe) ~ ., data = trainSet, 
+                   method = "rf", 
+                   importance = T, 
+                   trControl = trainControl(method = "cv", 
+                                            classProbs=TRUE, 
+                                            savePredictions=TRUE,
+                                            allowParallel=TRUE,
+                                            number = 11))
+plot(randomForestdata)
+```
+
+## Predicting with Random Forest
+When the Random forests are created, the model itself carves out a portion of data to avoid out of sample errors, and thus gives a better accuracy.
+
+Let's try and predict the outcomes now and see the accuracy of the same.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+prediction <- predict(randomForestdata, devSet, type = "class")
+classe <- as.factor(devSet$classe)
+confusionMatrix(prediction, classe)
+```
+
+From the confusion matrix we see that the stray data cases are very less and the accuracy of Random Forest Model is around 99.34%. Hence, it would be better than Decision Tree Model to use for predicting the values for the testing data (_pml-testing.csv_). The accuracy has increased by 20% points and is at a very high score.
+
+## Predicting on the Testing Data
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+prediction <- predict(randomForestdata, training, type = "class")
+classe <- as.factor(training$classe)
+confusionMatrix(prediction, classe)
+```
+
+Thus we see an accuracy of 99.87% on our Testing data set(_pml-testing.csv_).
